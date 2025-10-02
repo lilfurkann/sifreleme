@@ -1,0 +1,194 @@
+import React, { useEffect, useState } from "react";
+
+const STORAGE_KEY = "pw_to_msg_pairs_v1";
+
+export default function App() {
+  const [pairs, setPairs] = useState([]);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [revealMessage, setRevealMessage] = useState(null);
+  const [newPw, setNewPw] = useState("");
+  const [newMsg, setNewMsg] = useState("");
+  const [editingIndex, setEditingIndex] = useState(-1);
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setPairs(JSON.parse(raw));
+    } catch (e) {
+      console.error("load failed", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pairs));
+    } catch (e) {
+      console.error("save failed", e);
+    }
+  }, [pairs]);
+
+  function handleSubmitNew(e) {
+    e.preventDefault();
+    if (!newPw) return alert("Parola boş olamaz.");
+    const item = { pw: newPw, msg: newMsg };
+    if (editingIndex >= 0) {
+      const copy = [...pairs];
+      copy[editingIndex] = item;
+      setPairs(copy);
+      setEditingIndex(-1);
+    } else {
+      setPairs([...pairs, item]);
+    }
+    setNewPw("");
+    setNewMsg("");
+  }
+
+  function handleTryReveal(e) {
+    e.preventDefault();
+    const found = pairs.find(p => p.pw === passwordInput);
+    if (found) {
+      setRevealMessage(found.msg || "(mesaj boş)");
+    } else {
+      setRevealMessage("Eşleşen mesaj bulunamadı.");
+    }
+  }
+
+  function handleEdit(i) {
+    setEditingIndex(i);
+    setNewPw(pairs[i].pw);
+    setNewMsg(pairs[i].msg);
+  }
+
+  function handleDelete(i) {
+    if (!confirm("Silmek istediğine emin misin?")) return;
+    const copy = [...pairs];
+    copy.splice(i, 1);
+    setPairs(copy);
+  }
+
+  function exportJSON() {
+    const data = JSON.stringify(pairs, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "pw_to_msg_export.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importJSON(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        if (Array.isArray(parsed)) setPairs(parsed);
+        else alert("Beklenen format: [{pw, msg}, ...]");
+      } catch (err) {
+        alert("JSON ayrıştırılamadı: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  const visiblePairs = pairs.filter((p, i) => {
+    if (!filter) return true;
+    return p.pw.includes(filter) || (p.msg || "").includes(filter);
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-3xl mx-auto bg-white shadow-md rounded-2xl p-6">
+        <h1 className="text-2xl font-semibold mb-4">Şifre → Mesaj Yönetici</h1>
+
+        <section className="mb-6">
+          <form onSubmit={handleTryReveal} className="flex gap-2">
+            <input
+              value={passwordInput}
+              onChange={e => setPasswordInput(e.target.value)}
+              placeholder="Parolanı gir ve Göster'e bas"
+              className="flex-1 px-3 py-2 border rounded-lg"
+            />
+            <button className="px-4 py-2 rounded-lg bg-indigo-600 text-white">Göster</button>
+          </form>
+          {revealMessage !== null && (
+            <div className="mt-3 p-3 bg-gray-100 rounded-md">
+              <strong>Sonuç:</strong>
+              <div className="mt-1 whitespace-pre-wrap">{revealMessage}</div>
+            </div>
+          )}
+        </section>
+
+        <section className="mb-6">
+          <h2 className="font-medium mb-2">Yeni eşleme ekle / düzenle</h2>
+          <form onSubmit={handleSubmitNew} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input
+              value={newPw}
+              onChange={e => setNewPw(e.target.value)}
+              placeholder="Parola"
+              className="col-span-1 sm:col-span-1 px-3 py-2 border rounded-lg"
+            />
+            <input
+              value={newMsg}
+              onChange={e => setNewMsg(e.target.value)}
+              placeholder="Mesaj (gizlenecek açıklama)"
+              className="col-span-1 sm:col-span-1 px-3 py-2 border rounded-lg"
+            />
+            <div className="col-span-1 sm:col-span-1 flex gap-2">
+              <button className="px-4 py-2 rounded-lg bg-green-600 text-white">Kaydet</button>
+              {editingIndex >= 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setEditingIndex(-1); setNewPw(""); setNewMsg(""); }}
+                  className="px-4 py-2 rounded-lg bg-gray-300"
+                >
+                  İptal
+                </button>
+              )}
+            </div>
+          </form>
+          <div className="text-sm text-gray-500 mt-2">Not: Parolalar düz metin olarak depolanır (localStorage). Sunucu depolama yok.</div>
+        </section>
+
+        <section className="mb-6">
+          <div className="flex items-center justify-between">
+            <h2 className="font-medium">Kayıtlı eşlemeler ({pairs.length})</h2>
+            <div className="flex gap-2">
+              <input
+                placeholder="Ara..."
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+                className="px-3 py-1 border rounded"
+              />
+              <button onClick={exportJSON} className="px-3 py-1 rounded bg-indigo-600 text-white">Dışa Aktar</button>
+              <label className="px-3 py-1 rounded bg-gray-200 cursor-pointer">
+                İçe Aktar
+                <input type="file" accept="application/json" className="hidden" onChange={e => importJSON(e.target.files[0])} />
+              </label>
+              <button onClick={() => { setPairs([]); localStorage.removeItem(STORAGE_KEY); }} className="px-3 py-1 rounded bg-red-500 text-white">Tümünü Sil</button>
+            </div>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {visiblePairs.length === 0 && <div className="text-sm text-gray-500">Kayıt yok.</div>}
+            {visiblePairs.map((p, i) => (
+              <div key={i} className="flex items-center justify-between border rounded p-3">
+                <div className="flex-1">
+                  <div className="text-sm text-gray-700">Parola: <code className="bg-gray-100 px-2 py-1 rounded">{p.pw}</code></div>
+                  <div className="text-sm text-gray-500 mt-1 truncate">Mesaj: {p.msg || <em>boş</em>}</div>
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <button onClick={() => handleEdit(pairs.indexOf(p))} className="px-3 py-1 rounded bg-yellow-400">Düzenle</button>
+                  <button onClick={() => handleDelete(pairs.indexOf(p))} className="px-3 py-1 rounded bg-red-500 text-white">Sil</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <footer className="text-xs text-gray-500">Bu uygulama basit yerel saklama kullanır; gerçek gizlilik gereken veriler için sunucu tarafı şifreleme önerilir.</footer>
+      </div>
+    </div>
+  );
+}
